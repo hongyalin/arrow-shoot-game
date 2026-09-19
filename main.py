@@ -66,6 +66,9 @@ pygame.init()
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("一箭又一箭")
 
+home_bg_img = pygame.image.load("home_bg.png").convert_alpha()
+home_bg_img = pygame.transform.scale(home_bg_img, (WIDTH, HEIGHT))
+
 font_big = pygame.font.SysFont("simhei", 42)
 font_title = pygame.font.SysFont("simhei", 56)
 font_normal = pygame.font.SysFont("simhei", 28)
@@ -394,6 +397,8 @@ class Game:
     def draw(self):
         screen.fill(COLOR_BG)
         if self.state == "start":
+            screen.blit(home_bg_img, (0, 0))
+
             title = font_title.render("一箭又一箭", True, COLOR_TEXT)
             tip = font_small.render("点击开始游戏", True, COLOR_TEXT)
             info = font_small.render("点击箭头，前方无阻挡即可飞出", True, COLOR_TEXT)
