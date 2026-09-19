@@ -69,6 +69,16 @@ pygame.display.set_caption("一箭又一箭")
 home_bg_img = pygame.image.load("home_bg.png").convert_alpha()
 home_bg_img = pygame.transform.scale(home_bg_img, (WIDTH, HEIGHT))
 
+level_bg_img = pygame.image.load("level_bg.png").convert_alpha()
+level_bg_img = pygame.transform.scale(level_bg_img, (WIDTH, HEIGHT))
+
+success_bg_img = pygame.image.load("success_bg.png").convert_alpha()
+success_bg_img = pygame.transform.scale(success_bg_img, (WIDTH, HEIGHT))
+
+fail_bg_img = pygame.image.load("fail_bg.png").convert_alpha()
+fail_bg_img = pygame.transform.scale(fail_bg_img, (WIDTH, HEIGHT))
+
+
 font_big = pygame.font.SysFont("simhei", 42)
 font_title = pygame.font.SysFont("simhei", 56)
 font_normal = pygame.font.SysFont("simhei", 28)
@@ -423,6 +433,7 @@ class Game:
 
 
         elif self.state == "play":
+            screen.blit(level_bg_img, (0, 0))
             lvl_txt = font_small.render(f"关卡：{self.cur_level + 1}/{len(LEVELS)}", True, COLOR_TEXT)
             arr_txt = font_small.render(f"剩余箭头：{len(self.arrows)}", True, COLOR_TEXT)
             screen.blit(lvl_txt, (20, 20))
@@ -471,6 +482,7 @@ class Game:
             self._draw_hint_button()
 
         elif self.state == "win_level":
+            screen.blit(success_bg_img, (0, 0))
             panel = pygame.Rect(120, 180, 360, 340)
             pygame.draw.rect(screen, COLOR_PANEL, panel, border_radius=16)
             pygame.draw.rect(screen, COLOR_GRID, panel, 3, border_radius=16)
@@ -483,6 +495,7 @@ class Game:
             self.btn_home.draw(screen)
 
         elif self.state == "win":
+            screen.blit(success_bg_img, (0, 0))
             panel = pygame.Rect(120, 180, 360, 340)
             pygame.draw.rect(screen, COLOR_PANEL, panel, border_radius=16)
             pygame.draw.rect(screen, COLOR_GRID, panel, 3, border_radius=16)
@@ -493,6 +506,7 @@ class Game:
             self.btn_home_win.draw(screen)
 
         elif self.state == "lose":
+            screen.blit(fail_bg_img, (0, 0))
             panel = pygame.Rect(120, 180, 360, 340)
             pygame.draw.rect(screen, COLOR_PANEL, panel, border_radius=16)
             pygame.draw.rect(screen, COLOR_GRID, panel, 3, border_radius=16)
