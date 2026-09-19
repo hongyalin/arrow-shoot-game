@@ -19,8 +19,10 @@ COLOR_BLOCK = (230, 70, 70)
 COLOR_OK = (50, 160, 90)
 COLOR_BUTTON = (72, 130, 220)
 COLOR_BUTTON_HOVER = (90, 150, 240)
+COLOR_BUTTON_DISABLE = (160,160,160)
 COLOR_PANEL = (255, 255, 255)
 COLOR_SHADOW = (0, 0, 0, 40)
+COLOR_HINT = (255,180,0) # 提示高亮颜色
 
 UP = 0
 DOWN = 1
@@ -29,7 +31,7 @@ RIGHT = 3
 DIR_OFFSET = [(0, -1), (0, 1), (-1, 0), (1, 0)]
 DIR_CHAR = ["↑", "↓", "←", "→"]
 
-# ========== 关卡数据（这里就是LEVELS，不要漏掉！）==========
+# ========== 关卡数据 ==========
 LEVELS = [
     [
         (3,0,DOWN),
@@ -70,7 +72,6 @@ font_normal = pygame.font.SysFont("simhei", 28)
 font_small = pygame.font.SysFont("simhei", 24)
 font_btn = pygame.font.SysFont("simhei", 24)
 
-
 # ===================== 工具函数 =====================
 def ease_in_out_sine(t):
     return -(math.cos(math.pi * t) - 1) / 2
@@ -109,7 +110,6 @@ def draw_hearts(surf, x, y, total, remain, size=24, gap=6):
     for i in range(total):
         draw_heart(surf, x + i * (size + gap), y, size, i < remain)
 
-
 # ===================== Arrow =====================
 class Arrow:
     def __init__(self, x, y, dire):
@@ -126,6 +126,7 @@ class Arrow:
 
         self.locked = False
         self.penalized = False
+        self.hint_highlight = False # 是否提示高亮
 
     def update(self):
         if self.block_anim:
@@ -164,13 +165,18 @@ class Arrow:
             color = COLOR_BLOCK
         elif self.flying:
             color = COLOR_OK
+        elif self.hint_highlight:
+            # 闪烁效果
+            if int(time.time()*8) % 2 == 0:
+                color = COLOR_HINT
+            else:
+                color = COLOR_TEXT
         else:
             color = COLOR_TEXT
 
         txt = font_normal.render(DIR_CHAR[self.dire], True, color)
         rect = txt.get_rect(center=(cx, cy))
         surf.blit(txt, rect)
-
 
 # ===================== Button =====================
 class Button:
@@ -179,8 +185,11 @@ class Button:
         self.text = text
         self.callback = callback
         self.hover = False
+        self.disabled = False
 
     def handle_event(self, event):
+        if self.disabled:
+            return False
         if event.type == pygame.MOUSEMOTION:
             self.hover = self.rect.collidepoint(event.pos)
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -190,12 +199,14 @@ class Button:
         return False
 
     def draw(self, surf):
-        color = COLOR_BUTTON_HOVER if self.hover else COLOR_BUTTON
+        if self.disabled:
+            color = COLOR_BUTTON_DISABLE
+        else:
+            color = COLOR_BUTTON_HOVER if self.hover else COLOR_BUTTON
         draw_shadow_rect(surf, self.rect, color, radius=12)
         txt = font_btn.render(self.text, True, (255, 255, 255))
         txt_rect = txt.get_rect(center=self.rect.center)
         surf.blit(txt, txt_rect)
-
 
 # ===================== Game =====================
 class Game:
@@ -210,20 +221,43 @@ class Game:
         self.elapsed_time = 0.0
         self.is_timing = False
 
+        self.hint_count = 2
+        self.hint_end_time = 0.0
+        self.all_clear = False
         self.load_level(self.cur_level)
 
         self.btn_start = Button(220, 460, 160, 50, "开始游戏", self._start_game)
         self.btn_restart = Button(420, 20, 130, 45, "重新开始", lambda: self.load_level(self.cur_level))
+
+        # 锦囊提示按钮：放在网格右下角
+        self.btn_hint = Button(
+            GRID_OFFSET_X + GRID_COLS * CELL_SIZE - 70,
+            GRID_OFFSET_Y + GRID_ROWS * CELL_SIZE + 10,
+            60, 60,
+            "",
+            self.do_hint
+        )
+
         self.btn_next = Button(140, 340, 120, 50, "下一关", self._on_next_level)
         self.btn_home = Button(340, 340, 120, 50, "返回主页", lambda: self.goto_home())
         self.btn_restart_lose = Button(240, 380, 120, 50, "重新开始", self._retry_lose)
         self.btn_home_win = Button(240, 380, 120, 50, "返回主页", lambda: self.goto_home())
+
+        self.btn_reset_all = Button(140, 340, 120, 50, "重置进度", self._reset_all_progress)
+        self.btn_back_home = Button(340, 340, 120, 50, "返回主页", lambda: self.goto_home())
 
     def goto_home(self):
         self.state = "start"
         self.is_timing = False
 
     def _start_game(self):
+        # 判断是否已经全部通关
+        if self.all_clear:
+            self.state = "all_clear_tip"  # 新状态：全部通关提示页
+            return
+        # 未通关，正常开局
+        self.cur_level = 0
+        self.load_level(self.cur_level)
         self.state = "play"
         self.start_time = time.time()
         self.is_timing = True
@@ -239,6 +273,7 @@ class Game:
         if self.cur_level >= len(LEVELS):
             self.state = "win"
             self.is_timing = False
+            self.all_clear = True  # 全部通关，标记置True
         else:
             self.load_level(self.cur_level)
             self.state = "play"
@@ -250,6 +285,8 @@ class Game:
         self.mistake = 0
         self.elapsed_time = 0.0
         self.is_timing = False
+        self.hint_count = 2
+        self.hint_end_time = 0.0
         for (x, y, d) in LEVELS[lid]:
             self.arrows.append(Arrow(x, y, d))
 
@@ -266,16 +303,43 @@ class Game:
                 if a == arrow:
                     continue
                 if a.x == cx and a.y == cy:
-                    return False, math.hypot((cx-arrow.x)*CELL_SIZE, (cy-arrow.y)*CELL_SIZE)
+                    return False, math.hypot((cx - arrow.x) * CELL_SIZE, (cy - arrow.y) * CELL_SIZE)
+
+    def do_hint(self):
+        if self.hint_count <= 0:
+            return
+        if time.time() < self.hint_end_time:
+            return
+
+        for a in self.arrows:
+            a.hint_highlight = False
+
+        target_arrow = None
+        for a in self.arrows:
+            if a.locked:
+                continue
+            ok, _ = self.check_path(a)
+            if ok:
+                target_arrow = a
+                break
+
+        if target_arrow is not None:
+            target_arrow.hint_highlight = True
+            self.hint_count -= 1
+            self.hint_end_time = time.time() + 1.5
 
     def handle_click_grid(self, mx, my):
         if self.state != "play":
             return
+
         if self.btn_restart.rect.collidepoint(mx, my):
             self.load_level(self.cur_level)
             self.state = "play"
             self.start_time = time.time()
             self.is_timing = True
+            return
+
+        if self.btn_hint.rect.collidepoint(mx, my):
             return
 
         for arr in self.arrows:
@@ -304,6 +368,10 @@ class Game:
         if self.is_timing:
             self.elapsed_time = time.time() - self.start_time
 
+        if time.time() > self.hint_end_time:
+            for a in self.arrows:
+                a.hint_highlight = False
+
         for a in self.arrows:
             a.update()
         self.arrows = [a for a in self.arrows if not (a.flying and a.fly_progress >= 1.0)]
@@ -314,6 +382,14 @@ class Game:
         if self.mistake >= self.max_mistake:
             self.state = "lose"
             self.is_timing = False
+
+    def _reset_all_progress(self):
+        self.all_clear = False
+        self.cur_level = 0
+        self.load_level(self.cur_level)
+        self.state = "play"
+        self.start_time = time.time()
+        self.is_timing = True
 
     def draw(self):
         screen.fill(COLOR_BG)
@@ -326,25 +402,40 @@ class Game:
             screen.blit(info, info.get_rect(center=(WIDTH // 2, 380)))
             self.btn_start.draw(screen)
 
+        elif self.state == "all_clear_tip":
+            panel = pygame.Rect(120, 180, 360, 340)
+            pygame.draw.rect(screen, COLOR_PANEL, panel, border_radius=16)
+            pygame.draw.rect(screen, COLOR_GRID, panel, 3, border_radius=16)
+            text = font_big.render("您已完成全部关卡！", True, COLOR_OK)
+            tip = font_small.render("是否重置进度，重新挑战？", True, COLOR_TEXT)
+            screen.blit(text, text.get_rect(center=(WIDTH // 2, 240)))
+            screen.blit(tip, tip.get_rect(center=(WIDTH // 2, 290)))
+            # 两个按钮：重置 / 返回主页
+            self.btn_reset_all = Button(140, 340, 120, 50, "重置进度", self._reset_all_progress)
+            self.btn_back_home = Button(340, 340, 120, 50, "返回主页", lambda: self.goto_home())
+            self.btn_reset_all.draw(screen)
+            self.btn_back_home.draw(screen)
+
+
         elif self.state == "play":
-            # 左上角信息
             lvl_txt = font_small.render(f"关卡：{self.cur_level + 1}/{len(LEVELS)}", True, COLOR_TEXT)
             arr_txt = font_small.render(f"剩余箭头：{len(self.arrows)}", True, COLOR_TEXT)
             screen.blit(lvl_txt, (20, 20))
             screen.blit(arr_txt, (20, 50))
 
-            # 红心：网格上方正中心
             grid_center_x = GRID_OFFSET_X + (GRID_COLS * CELL_SIZE) // 2
-            heart_total_width = 3*24 + 2*6
-            heart_start_x = grid_center_x - heart_total_width // 2
-            heart_y = GRID_OFFSET_Y - 40
-            draw_hearts(screen, heart_start_x, heart_y, self.max_mistake, self.max_mistake - self.mistake, size=24, gap=6)
 
-            # 计时 MM:SS，放在红心下方
+            # 计时放在红心上方
             time_str = sec_to_mmss(self.elapsed_time)
             time_txt = font_small.render(f"用时：{time_str}", True, COLOR_TEXT)
-            time_rect = time_txt.get_rect(center=(grid_center_x, heart_y + 32))
+            time_rect = time_txt.get_rect(center=(grid_center_x, GRID_OFFSET_Y - 70))
             screen.blit(time_txt, time_rect)
+
+            # 红心放在计时下方
+            heart_total_width = 3 * 24 + 2 * 6
+            heart_start_x = grid_center_x - heart_total_width // 2
+            heart_y = GRID_OFFSET_Y - 42
+            draw_hearts(screen, heart_start_x, heart_y, self.max_mistake, self.max_mistake - self.mistake, size=24, gap=6)
 
             self.btn_restart.draw(screen)
 
@@ -366,8 +457,13 @@ class Game:
                         CELL_SIZE - 4
                     )
                     pygame.draw.rect(screen, COLOR_GRID_CELL, rect, border_radius=6)
+
             for a in self.arrows:
                 a.draw(screen)
+
+            # 锦囊提示按钮
+            self.btn_hint.disabled = (self.hint_count <= 0)
+            self._draw_hint_button()
 
         elif self.state == "win_level":
             panel = pygame.Rect(120, 180, 360, 340)
@@ -403,6 +499,51 @@ class Game:
 
         pygame.display.flip()
 
+    def _draw_hint_button(self):
+        """绘制灯泡图标按钮，并在右上角显示剩余提示次数"""
+        btn = self.btn_hint
+        color = COLOR_BUTTON_HOVER if btn.hover else COLOR_BUTTON
+        if btn.disabled:
+            color = COLOR_BUTTON_DISABLE
+
+        draw_shadow_rect(screen, btn.rect, color, radius=14)
+
+        cx = btn.rect.centerx
+        cy = btn.rect.centery
+
+        if btn.disabled:
+            # 禁用态：灰色灯泡
+            bulb_color = (230, 230, 230)
+            base_color = (170, 170, 170)
+        else:
+            # 可用态：黄色发光灯泡
+            bulb_color = (255, 230, 120)
+            base_color = (255, 200, 60)
+
+            # 外圈柔光
+            pygame.draw.circle(screen, (255, 245, 180), (cx, cy - 4), 24)
+
+        # 灯泡主体
+        pygame.draw.circle(screen, bulb_color, (cx, cy - 4), 18)
+        pygame.draw.circle(screen, base_color, (cx, cy - 4), 18, 2)
+
+        # 灯泡高光
+        pygame.draw.circle(screen, (255, 255, 255), (cx - 6, cy - 10), 4)
+
+        # 灯座
+        pygame.draw.rect(screen, base_color, (cx - 6, cy + 10, 12, 6), border_radius=2)
+        pygame.draw.rect(screen, base_color, (cx - 5, cy + 16, 10, 4), border_radius=2)
+
+        # 次数角标
+        badge_radius = 12
+        badge_x = btn.rect.right - 8
+        badge_y = btn.rect.top + 8
+        pygame.draw.circle(screen, (230, 70, 70), (badge_x, badge_y), badge_radius)
+        pygame.draw.circle(screen, (255, 255, 255), (badge_x, badge_y), badge_radius, 2)
+        num_txt = font_btn.render(str(self.hint_count), True, (255, 255, 255))
+        num_rect = num_txt.get_rect(center=(badge_x, badge_y))
+        screen.blit(num_txt, num_rect)
+
 
 # ===================== main loop =====================
 if __name__ == "__main__":
@@ -420,6 +561,7 @@ if __name__ == "__main__":
                 game.btn_start.handle_event(event)
             elif game.state == "play":
                 game.btn_restart.handle_event(event)
+                game.btn_hint.handle_event(event)
             elif game.state == "win_level":
                 game.btn_next.handle_event(event)
                 game.btn_home.handle_event(event)
@@ -427,6 +569,9 @@ if __name__ == "__main__":
                 game.btn_home_win.handle_event(event)
             elif game.state == "lose":
                 game.btn_restart_lose.handle_event(event)
+            elif game.state == "all_clear_tip":
+                game.btn_reset_all.handle_event(event)
+                game.btn_back_home.handle_event(event)
 
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 mx, my = event.pos
