@@ -71,3 +71,7 @@ arrow-shoot-game/
 ## 📄 License
 
 本项目仅用于课程学习，禁止商用。
+
+### 游戏截图
+![游戏主页](./screenshots/home.png "游戏主页界面")
+![关卡游玩画面](./screenshots/game.png "游戏对局")
